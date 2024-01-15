@@ -210,7 +210,7 @@ if ddp:
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
-def estimate_loss():
+def estimate_loss():#模型不会计入梯度，这部分只是验证用的
     out = {}
     model.eval()
     for split in ['train', 'val']:
@@ -226,7 +226,7 @@ def estimate_loss():
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
-    # 1) linear warmup for warmup_iters steps
+    # 1) linear warmup for warmup_iters steps学习率从0开始涨然后下降
     if it < warmup_iters:
         return learning_rate * it / warmup_iters
     # 2) if it > lr_decay_iters, return min learning rate
@@ -294,7 +294,7 @@ while True:
             # looking at the source of that context manager, it just toggles this variable
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
-            logits, loss = model(X, Y)
+            logits, loss = model(X, Y)#xy输入模型，得到一个Loss
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
