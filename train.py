@@ -79,7 +79,8 @@ config = {k: globals()[k] for k in config_keys} # will be useful for logging
 # -----------------------------------------------------------------------------
 
 # various inits, derived attributes, I/O setup
-ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run?
+'''os.environ.get('RANK', -1)=-1'''
+ddp = int(os.environ.get('RANK', -1)) != -1 # is this a ddp run? 
 if ddp:
     init_process_group(backend=backend)
     ddp_rank = int(os.environ['RANK'])
@@ -98,6 +99,7 @@ else:
     master_process = True
     seed_offset = 0
     ddp_world_size = 1
+'''30720        =         40                  *         1      *      12    *     64     '''
 tokens_per_iter = gradient_accumulation_steps * ddp_world_size * batch_size * block_size
 print(f"tokens per iteration will be: {tokens_per_iter:,}")
 
@@ -149,7 +151,7 @@ if init_from == 'scratch':
     # determine the vocab size we'll use for from-scratch training
     if meta_vocab_size is None:
         print("defaulting to vocab_size of GPT-2 to 50304 (50257 rounded up for efficiency)")
-    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
+    model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304# 65
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
 elif init_from == 'resume':
@@ -184,6 +186,7 @@ elif init_from.startswith('gpt2'):
     for k in ['n_layer', 'n_head', 'n_embd', 'block_size', 'bias', 'vocab_size']:
         model_args[k] = getattr(model.config, k)
 # crop down the model block size if desired, using model surgery
+'''     64                     64        '''
 if block_size < model.config.block_size:
     model.crop_block_size(block_size)
     model_args['block_size'] = block_size # so that the checkpoint will have the right value
@@ -210,7 +213,7 @@ if ddp:
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
 @torch.no_grad()
-def estimate_loss():
+def estimate_loss():#模型不会计入梯度，这部分只是验证用的
     out = {}
     model.eval()
     for split in ['train', 'val']:
@@ -226,7 +229,13 @@ def estimate_loss():
 
 # learning rate decay scheduler (cosine with warmup)
 def get_lr(it):
-    # 1) linear warmup for warmup_iters steps
+    '''
+    根据迭代次数来计算学习率
+前warmup_iters逐步增加到给定的学习率learning_rate
+warmup_iters 到 lr_decay_iters 之间采用余弦规律递减，
+大于lr_decay_iters之后使用最小学习率
+    '''
+    # 1) linear warmup for warmup_iters steps学习率从0开始涨然后下降
     if it < warmup_iters:
         return learning_rate * it / warmup_iters
     # 2) if it > lr_decay_iters, return min learning rate
@@ -294,7 +303,7 @@ while True:
             # looking at the source of that context manager, it just toggles this variable
             model.require_backward_grad_sync = (micro_step == gradient_accumulation_steps - 1)
         with ctx:
-            logits, loss = model(X, Y)
+            logits, loss = model(X, Y)#xy输入模型，得到一个Loss
             loss = loss / gradient_accumulation_steps # scale the loss to account for gradient accumulation
         # immediately async prefetch next batch while model is doing the forward pass on the GPU
         X, Y = get_batch('train')
@@ -322,12 +331,11 @@ while True:
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9*running_mfu + 0.1*mfu
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt*1000:.2f}ms, mfu {running_mfu*100:.2f}%")
-    iter_num += 1
-    local_iter_num += 1
+        iter_num += 1
+        local_iter_num += 1
 
     # termination conditions
     if iter_num > max_iters:
         break
-
 if ddp:
     destroy_process_group()
